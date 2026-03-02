@@ -156,6 +156,17 @@ class Decision:
         """Truthy = allowed."""
         return self.allowed
 
+    def to_dict(self) -> dict:
+        """Serialize for audit composition."""
+        return {
+            "status": self.status.name,
+            "rule": str(self.rule),
+            "reason": self.reason.name if self.reason else None,
+            "message": self.message,
+            "violated_rules": list(self.violated_rules),
+            "evaluated_count": self.evaluated_count,
+        }
+
 
 class _Missing:
     """Sentinel for distinguishing None from missing value."""
