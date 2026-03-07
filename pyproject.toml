@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rulegate"
-version = "0.2.1"
+version = "0.2.2"
 description = "Deterministic, pre-execution policy enforcement for semantic actions in agent systems."
 readme = "README.md"
 license = "BUSL-1.1"

@@ -42,6 +42,7 @@ from .core import (
     Status,
     StoreErrorMode,
 )
+from .emitter import Emitter
 from .engine import Engine, PolicyViolation
 from .store import EvalRecord, MemoryStore, Store
 
@@ -63,10 +64,11 @@ __all__ = [
     # Engine
     "Engine",
     "PolicyViolation",
+    "Emitter",
     # Store
     "Store",
     "MemoryStore",
     "EvalRecord",
 ]
 
-__version__ = "0.2.0"
+__version__ = "0.2.2"
