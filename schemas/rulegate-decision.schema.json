@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "license": "Business Source License 1.1",
+  "$id": "https://actiongate.dev/schemas/rulegate-decision-0.2.2.json",
+  "title": "RuleGate Decision",
+  "description": "Serialized output of rulegate.Decision.to_dict(). Policy evaluation result.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "status",
+    "rule",
+    "reason",
+    "message",
+    "violated_rules",
+    "evaluated_count"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "0.2.2",
+      "description": "Schema version. Consumers must check this before parsing."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "ALLOW",
+        "BLOCK"
+      ],
+      "description": "Gate verdict."
+    },
+    "rule": {
+      "type": "string",
+      "pattern": "^[^:]+:[^@]+@.+$",
+      "description": "Rule identity as namespace:action@principal."
+    },
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "POLICY_VIOLATION",
+        "STORE_ERROR",
+        null
+      ],
+      "description": "Block reason. Null when status is ALLOW."
+    },
+    "message": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Human-readable explanation. Null when status is ALLOW."
+    },
+    "violated_rules": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Names of predicates that failed. Empty when status is ALLOW."
+    },
+    "evaluated_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of predicates evaluated before decision."
+    }
+  }
+}
