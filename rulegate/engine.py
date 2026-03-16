@@ -1,5 +1,5 @@
 # Copyright 2026 actiongate-oss
-# Licensed under the Business Source License 1.1 (the "License")
+# Licensed under the Apache License, Version 2.0
 
 """Core engine for RuleGate."""
 
