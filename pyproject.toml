@@ -4,10 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rulegate"
-version = "0.2.2"
+version = "0.2.3"
 description = "Deterministic, pre-execution policy enforcement for semantic actions in agent systems."
 readme = "README.md"
-license = "BUSL-1.1"
+license = "Apache-2.0"
 requires-python = ">=3.12"
 authors = [
     { name = "ActionGate OSS", email = "actiongate-oss@users.noreply.github.com" }
