@@ -11,7 +11,7 @@ All rules must pass for the action to proceed. Pairs with ActionGate
 and BudgetGate as composable primitives in the agent execution layer.
 
 Example:
-    from rulegate import Engine, Rule, Ruleset, Context, PolicyViolation
+    from rulegate import Engine, Rule, Ruleset, Context, PolicyViolationError
 
     engine = Engine()
 
@@ -24,7 +24,7 @@ Example:
 
     try:
         results = search(query="find user")
-    except PolicyViolation as e:
+    except PolicyViolationError as e:
         print(f"Blocked: {e.decision.violated_rules}")
 """
 
@@ -43,8 +43,8 @@ from .core import (
     StoreErrorMode,
 )
 from .emitter import Emitter
-from .engine import Engine, PolicyViolation
-from .store import EvalRecord, MemoryStore, Store
+from .engine import Engine, PolicyViolationError
+from .store import AsyncMemoryStore, AsyncStore, EvalRecord, MemoryStore, Store
 
 __all__ = [
     # Core types
@@ -63,12 +63,14 @@ __all__ = [
     "StoreErrorMode",
     # Engine
     "Engine",
-    "PolicyViolation",
+    "PolicyViolationError",
     "Emitter",
     # Store
     "Store",
+    "AsyncStore",
     "MemoryStore",
+    "AsyncMemoryStore",
     "EvalRecord",
 ]
 
-__version__ = "0.2.2"
+__version__ = "0.3.0"

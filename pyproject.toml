@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rulegate"
-version = "0.2.3"
+version = "0.3.0"
 description = "Deterministic, pre-execution policy enforcement for semantic actions in agent systems."
 readme = "README.md"
 license = "Apache-2.0"
@@ -48,6 +48,7 @@ packages = ["rulegate"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+asyncio_mode = "auto"
 
 [tool.mypy]
 python_version = "3.12"

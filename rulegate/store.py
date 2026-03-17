@@ -13,6 +13,7 @@ for observability and audit purposes.
 
 from __future__ import annotations
 
+import asyncio
 import threading
 from dataclasses import dataclass
 from typing import Protocol
@@ -67,6 +68,34 @@ class Store(Protocol):
         ...
 
     def clear_all(self) -> None:
+        """Clear all evaluation records."""
+        ...
+
+
+class AsyncStore(Protocol):
+    """Async storage backend protocol for evaluation records.
+
+    Mirror of Store for async engines.
+    """
+
+    async def record(self, rule: Rule, now: float, decision: Decision) -> None:
+        """Record an evaluation outcome."""
+        ...
+
+    async def get_records(
+        self,
+        rule: Rule,
+        now: float,
+        window: float | None,
+    ) -> list[EvalRecord]:
+        """Get evaluation records for a rule within a time window."""
+        ...
+
+    async def clear(self, rule: Rule) -> None:
+        """Clear evaluation records for a specific rule."""
+        ...
+
+    async def clear_all(self) -> None:
         """Clear all evaluation records."""
         ...
 
@@ -136,5 +165,69 @@ class MemoryStore:
 
     def clear_all(self) -> None:
         with self._global_lock:
+            self._records.clear()
+            self._locks.clear()
+
+
+class AsyncMemoryStore:
+    """Async in-memory store for evaluation records.
+
+    Uses asyncio.Lock for coroutine-safe access. Suitable for
+    single-process async deployments.
+    """
+
+    __slots__ = ("_records", "_locks", "_global_lock")
+
+    def __init__(self) -> None:
+        self._records: dict[Rule, list[EvalRecord]] = {}
+        self._locks: dict[Rule, asyncio.Lock] = {}
+        self._global_lock = asyncio.Lock()
+
+    async def _get_lock(self, rule: Rule) -> asyncio.Lock:
+        if rule not in self._locks:
+            self._locks[rule] = asyncio.Lock()
+        return self._locks[rule]
+
+    def _prune(
+        self,
+        records: list[EvalRecord],
+        now: float,
+        window: float | None,
+    ) -> list[EvalRecord]:
+        if window is None:
+            return list(records)
+        cutoff = now - window
+        return [r for r in records if r.ts >= cutoff]
+
+    async def record(self, rule: Rule, now: float, decision: Decision) -> None:
+        async with self._global_lock:
+            lock = await self._get_lock(rule)
+            async with lock:
+                records = self._records.get(rule, [])
+                records.append(EvalRecord(ts=now, decision=decision))
+                self._records[rule] = records
+
+    async def get_records(
+        self,
+        rule: Rule,
+        now: float,
+        window: float | None,
+    ) -> list[EvalRecord]:
+        async with self._global_lock:
+            lock = await self._get_lock(rule)
+            async with lock:
+                records = self._records.get(rule, [])
+                pruned = self._prune(records, now, window)
+                self._records[rule] = pruned
+                return list(pruned)
+
+    async def clear(self, rule: Rule) -> None:
+        async with self._global_lock:
+            lock = await self._get_lock(rule)
+            async with lock:
+                self._records.pop(rule, None)
+
+    async def clear_all(self) -> None:
+        async with self._global_lock:
             self._records.clear()
             self._locks.clear()

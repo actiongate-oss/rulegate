@@ -6,21 +6,30 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable, Coroutine
 from functools import wraps
-from typing import Any, Callable, ParamSpec, TypeVar
+from typing import Any, ParamSpec, TypeVar
 
 from .core import (
-    BlockReason, Context, Decision, Mode, NamedPredicate,
-    Predicate, Result, Rule, Ruleset, Status,
+    BlockReason,
+    Context,
+    Decision,
+    Mode,
+    NamedPredicate,
+    Predicate,
+    Result,
+    Rule,
+    Ruleset,
+    Status,
 )
 from .emitter import Emitter
-from .store import MemoryStore, Store
+from .store import AsyncMemoryStore, AsyncStore, MemoryStore, Store
 
 P = ParamSpec("P")
 T = TypeVar("T")
 
 
-class PolicyViolation(RuntimeError):
+class PolicyViolationError(RuntimeError):
     """Raised when action violates policy in HARD mode."""
     def __init__(self, decision: Decision) -> None:
         super().__init__(decision.message or f"Policy violation: {decision.reason}")
@@ -37,11 +46,13 @@ def _predicate_name(predicate: Predicate | NamedPredicate) -> str:
 class Engine:
     """RuleGate engine for policy enforcement on agent actions."""
 
-    __slots__ = ("_store", "_clock", "_rulesets", "_emitter", "_store_errors")
+    __slots__ = ("_store", "_async_store", "_clock", "_rulesets", "_emitter", "_store_errors")
 
     def __init__(self, store: Store | None = None, clock: Callable[[], float] | None = None,
-                 emitter: Emitter | None = None) -> None:
+                 emitter: Emitter | None = None,
+                 async_store: AsyncStore | None = None) -> None:
         self._store: Store = store or MemoryStore()
+        self._async_store: AsyncStore = async_store or AsyncMemoryStore()
         self._clock = clock or time.monotonic
         self._rulesets: dict[Rule, Ruleset] = {}
         self._emitter = emitter or Emitter()
@@ -63,16 +74,20 @@ class Engine:
     def check(self, rule: Rule, ruleset: Ruleset | None = None, *,
               args: tuple[Any, ...] = (), kwargs: dict[str, Any] | None = None,
               meta: dict[str, Any] | None = None) -> Decision:
-        return self._evaluate(rule, ruleset, args=args, kwargs=kwargs, meta=meta, short_circuit=True)
+        return self._evaluate(
+            rule, ruleset, args=args, kwargs=kwargs, meta=meta, short_circuit=True,
+        )
 
     def check_all(self, rule: Rule, ruleset: Ruleset | None = None, *,
                   args: tuple[Any, ...] = (), kwargs: dict[str, Any] | None = None,
                   meta: dict[str, Any] | None = None) -> Decision:
-        return self._evaluate(rule, ruleset, args=args, kwargs=kwargs, meta=meta, short_circuit=False)
+        return self._evaluate(
+            rule, ruleset, args=args, kwargs=kwargs, meta=meta, short_circuit=False,
+        )
 
     def enforce(self, decision: Decision) -> None:
         if decision.blocked and decision.ruleset.mode == Mode.HARD:
-            raise PolicyViolation(decision)
+            raise PolicyViolationError(decision)
 
     def clear(self, rule: Rule) -> None:
         self._store.clear(rule)
@@ -89,13 +104,14 @@ class Engine:
             def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
                 decision = self.check(rule, args=args, kwargs=dict(kwargs), meta=meta or {})
                 if decision.blocked:
-                    raise PolicyViolation(decision)
+                    raise PolicyViolationError(decision)
                 return fn(*args, **kwargs)
             return wrapper
         return decorator
 
     def guard_result(self, rule: Rule, ruleset: Ruleset | None = None, *,
-                     meta: dict[str, Any] | None = None) -> Callable[[Callable[P, T]], Callable[P, Result[T]]]:
+                     meta: dict[str, Any] | None = None,
+                     ) -> Callable[[Callable[P, T]], Callable[P, Result[T]]]:
         if ruleset is not None:
             self.register(rule, ruleset)
         def decorator(fn: Callable[P, T]) -> Callable[P, Result[T]]:
@@ -109,6 +125,127 @@ class Engine:
             return wrapper
         return decorator
 
+    # ─────────────────────────────────────────────────────────────
+    # Async API
+    # ─────────────────────────────────────────────────────────────
+
+    async def async_check(self, rule: Rule, ruleset: Ruleset | None = None, *,
+                          args: tuple[Any, ...] = (), kwargs: dict[str, Any] | None = None,
+                          meta: dict[str, Any] | None = None) -> Decision:
+        """Async version of check(). Records to async_store."""
+        return await self._async_evaluate(
+            rule, ruleset, args=args, kwargs=kwargs, meta=meta, short_circuit=True,
+        )
+
+    async def async_enforce(self, decision: Decision) -> None:
+        """Async version of enforce(). Raises PolicyViolationError in HARD mode."""
+        if decision.blocked and decision.ruleset.mode == Mode.HARD:
+            raise PolicyViolationError(decision)
+
+    def async_guard(
+        self,
+        rule: Rule,
+        ruleset: Ruleset | None = None,
+        *,
+        meta: dict[str, Any] | None = None,
+    ) -> Callable[
+        [Callable[P, Coroutine[object, object, T]]],
+        Callable[P, Coroutine[object, object, T]],
+    ]:
+        """Async decorator that returns T directly. Raises PolicyViolationError on block."""
+        if ruleset is not None:
+            self.register(rule, ruleset)
+
+        def decorator(
+            fn: Callable[P, Coroutine[object, object, T]],
+        ) -> Callable[P, Coroutine[object, object, T]]:
+            @wraps(fn)
+            async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+                decision = await self.async_check(
+                    rule, args=args, kwargs=dict(kwargs), meta=meta or {},
+                )
+                if decision.blocked:
+                    raise PolicyViolationError(decision)
+                return await fn(*args, **kwargs)
+            return wrapper
+        return decorator
+
+    def async_guard_result(
+        self,
+        rule: Rule,
+        ruleset: Ruleset | None = None,
+        *,
+        meta: dict[str, Any] | None = None,
+    ) -> Callable[
+        [Callable[P, Coroutine[object, object, T]]],
+        Callable[P, Coroutine[object, object, Result[T]]],
+    ]:
+        """Async decorator that returns Result[T] (never raises)."""
+        if ruleset is not None:
+            self.register(rule, ruleset)
+
+        def decorator(
+            fn: Callable[P, Coroutine[object, object, T]],
+        ) -> Callable[P, Coroutine[object, object, Result[T]]]:
+            @wraps(fn)
+            async def wrapper(*args: P.args, **kwargs: P.kwargs) -> Result[T]:
+                decision = await self.async_check(
+                    rule, args=args, kwargs=dict(kwargs), meta=meta or {},
+                )
+                if decision.blocked:
+                    return Result(decision=decision)
+                value = await fn(*args, **kwargs)
+                return Result(decision=decision, _value=value)
+            return wrapper
+        return decorator
+
+    async def _async_evaluate(
+        self, rule: Rule, ruleset: Ruleset | None, *, args: tuple[Any, ...],
+        kwargs: dict[str, Any] | None, meta: dict[str, Any] | None,
+        short_circuit: bool,
+    ) -> Decision:
+        """Async version of _evaluate. Predicates run synchronously; store is async."""
+        now = self._clock()
+        ruleset = ruleset or self.ruleset_for(rule)
+        if ruleset is None:
+            raise ValueError(
+                f"No ruleset registered for {rule}. "
+                "Call engine.register() or pass ruleset to async_check()."
+            )
+        ctx = Context(rule=rule, args=args, kwargs=kwargs or {}, meta=meta or {})
+        violated: list[str] = []
+        evaluated = 0
+        for predicate in ruleset.predicates:
+            evaluated += 1
+            try:
+                result = predicate(ctx)
+            except Exception as e:
+                name = _predicate_name(predicate)
+                violated.append(f"{name} (raised: {type(e).__name__}: {e})")
+                if short_circuit:
+                    break
+                continue
+            if not result:
+                violated.append(_predicate_name(predicate))
+                if short_circuit:
+                    break
+        if violated:
+            decision = self._decide(
+                rule, ruleset, status=Status.BLOCK,
+                reason=BlockReason.POLICY_VIOLATION,
+                message=f"Policy violation: {', '.join(violated)}",
+                violated_rules=tuple(violated), evaluated_count=evaluated,
+            )
+        else:
+            decision = self._decide(
+                rule, ruleset, status=Status.ALLOW, evaluated_count=evaluated,
+            )
+        try:
+            await self._async_store.record(rule, now, decision)
+        except Exception:
+            self._store_errors += 1
+        return decision
+
     def _evaluate(self, rule: Rule, ruleset: Ruleset | None, *, args: tuple[Any, ...],
                   kwargs: dict[str, Any] | None, meta: dict[str, Any] | None,
                   short_circuit: bool) -> Decision:
@@ -116,7 +253,11 @@ class Engine:
         ruleset = ruleset or self.ruleset_for(rule)
         if ruleset is None:
             method = "check" if short_circuit else "check_all"
-            raise ValueError(f"No ruleset registered for {rule}. Call engine.register() or pass ruleset to {method}().")
+            msg = (
+                f"No ruleset registered for {rule}. "
+                f"Call engine.register() or pass ruleset to {method}()."
+            )
+            raise ValueError(msg)
         ctx = Context(rule=rule, args=args, kwargs=kwargs or {}, meta=meta or {})
         violated: list[str] = []
         evaluated = 0

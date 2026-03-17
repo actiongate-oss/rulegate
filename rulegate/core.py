@@ -8,9 +8,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, Callable
+from typing import Any
 
 
 class Mode(Enum):
@@ -156,7 +157,7 @@ class Decision:
         """Truthy = allowed."""
         return self.allowed
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, object]:
         """Serialize for audit composition."""
         return {
             "schema_version": "0.2.2",

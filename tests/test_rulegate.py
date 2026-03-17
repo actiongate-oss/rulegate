@@ -9,31 +9,27 @@
 from __future__ import annotations
 
 import threading
-import time
 from typing import Any
 
 import pytest
 
 # ─── Imports ────────────────────────────────────────────────────
-
 from rulegate import (
     MISSING,
     BlockReason,
     Context,
     Decision,
     Engine,
-    EvalRecord,
     MemoryStore,
     Mode,
     NamedPredicate,
-    PolicyViolation,
+    PolicyViolationError,
     Result,
     Rule,
     Ruleset,
     Status,
     StoreErrorMode,
 )
-
 
 # ═══════════════════════════════════════════════════════════════
 # core.py tests
@@ -392,7 +388,7 @@ class TestEngineEnforce:
         engine = Engine()
         rule = Rule("api", "search")
         decision = engine.check(rule, Ruleset(predicates=(lambda ctx: False,)))
-        with pytest.raises(PolicyViolation) as exc_info:
+        with pytest.raises(PolicyViolationError) as exc_info:
             engine.enforce(decision)
         assert exc_info.value.decision is decision
 
@@ -434,12 +430,12 @@ class TestEngineListeners:
         assert engine.listener_errors >= 0  # Listener errors from _emit
 
 
-class TestPolicyViolation:
+class TestPolicyViolationError:
     def test_exception_has_decision(self) -> None:
         engine = Engine()
         rule = Rule("api", "search")
         decision = engine.check(rule, Ruleset(predicates=(lambda ctx: False,)))
-        exc = PolicyViolation(decision)
+        exc = PolicyViolationError(decision)
         assert exc.decision is decision
         assert "Policy violation" in str(exc)
 
@@ -466,7 +462,7 @@ class TestGuardDecorator:
         def search(query: str) -> str:
             return f"results for {query}"
 
-        with pytest.raises(PolicyViolation):
+        with pytest.raises(PolicyViolationError):
             search("hello")
 
     def test_passes_args_to_context(self) -> None:
